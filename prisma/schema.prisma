@@ -1,0 +1,227 @@
+// CEOSAVDOUZ Prisma Schema
+// Supports SQLite for zero-config local development out of the box,
+// and PostgreSQL for scalable production deployments.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String           @id @default(cuid())
+  email        String           @unique
+  passwordHash String
+  name         String
+  phone        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  memberships  BusinessMember[]
+  auditLogs    AuditLog[]
+}
+
+model Business {
+  id           String           @id @default(cuid())
+  name         String
+  inn          String?          // Uzbek Tax ID (ИНН)
+  phone        String?
+  address      String?
+  city         String?          @default("Ташкент")
+  currency     String           @default("UZS")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  members      BusinessMember[]
+  categories   Category[]
+  products     Product[]
+  customers    Customer[]
+  orders       Order[]
+  payments     Payment[]
+  transactions Transaction[]
+  notifications Notification[]
+  auditLogs    AuditLog[]
+}
+
+model BusinessMember {
+  id         String   @id @default(cuid())
+  userId     String
+  businessId String
+  role       String   @default("OWNER") // OWNER, ADMIN, MANAGER, CASHIER
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  businessId  String
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  products    Product[]
+
+  @@index([businessId])
+}
+
+model Product {
+  id                String      @id @default(cuid())
+  businessId        String
+  categoryId        String?
+  name              String
+  sku               String?     // Stock Keeping Unit
+  barcode           String?
+  costPrice         Float       @default(0)   // Закупочная цена (UZS)
+  sellingPrice      Float       @default(0)   // Розничная цена (UZS)
+  stockQuantity     Int         @default(0)   // Текущий остаток
+  minStockThreshold Int         @default(5)   // Минимальный остаток для оповещения
+  unit              String      @default("шт") // шт, кг, м, л
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  business          Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category          Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  orderItems        OrderItem[]
+
+  @@index([businessId])
+  @@index([categoryId])
+}
+
+model Customer {
+  id          String    @id @default(cuid())
+  businessId  String
+  name        String
+  phone       String
+  address     String?
+  notes       String?
+  totalSpent  Float     @default(0) // Сумма всех завершенных заказов
+  currentDebt Float     @default(0) // Текущая задолженность клиента
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders      Order[]
+  payments    Payment[]
+
+  @@index([businessId])
+  @@index([phone])
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  businessId     String
+  customerId     String?
+  orderNumber    String      // e.g. ORD-1001
+  status         String      @default("PENDING") // PENDING, PROCESSING, COMPLETED, CANCELLED
+  paymentStatus  String      @default("UNPAID")  // UNPAID, PARTIAL, PAID
+  totalAmount    Float       @default(0)         // Общая сумма заказа
+  discountAmount Float       @default(0)         // Скидка
+  paidAmount     Float       @default(0)         // Фактически оплачено
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  business       Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer       Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items          OrderItem[]
+  payments       Payment[]
+
+  @@index([businessId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  productId   String?
+  productName String
+  quantity    Int      @default(1)
+  unitPrice   Float    @default(0)
+  costPrice   Float    @default(0)
+  total       Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  businessId    String
+  customerId    String?
+  orderId       String?
+  amount        Float
+  paymentMethod String   @default("CASH") // CASH, CARD, BANK_TRANSFER
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([customerId])
+  @@index([orderId])
+}
+
+model Transaction {
+  id             String   @id @default(cuid())
+  businessId     String
+  type           String   // INCOME, EXPENSE
+  category       String   // Аренда, Зарплата, Закупка товара, Логистика, Прочее, Оплата заказа
+  amount         Float
+  description    String?
+  date           DateTime @default(now())
+  relatedOrderId String?
+  createdAt      DateTime @default(now())
+
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([type])
+  @@index([date])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  businessId String
+  title      String
+  message    String
+  type       String   @default("SYSTEM") // ORDER, STOCK, FINANCE, SYSTEM
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([isRead])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String?
+  action     String   // CREATE, UPDATE, DELETE, LOGIN
+  entity     String   // PRODUCT, ORDER, CUSTOMER, FINANCE, SETTINGS
+  entityId   String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([createdAt])
+}
