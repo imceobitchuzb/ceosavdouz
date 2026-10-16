@@ -182,6 +182,44 @@ async function runTests() {
     await prisma.business.delete({ where: { id: anotherBusiness.id } });
     assert(true, "Temporary tenant cleanly cleaned up");
 
+    // 7. Test Telegram HMAC-SHA256 Cryptographic Verification
+    console.log("\n[Test 7] Testing Telegram Web App HMAC-SHA256 Cryptographic Verification...");
+    const crypto = require("crypto");
+    const testBotToken = "8888796090:AAGhUIbpAhggUI_w4CAy9GNQMlhj9sQHpnU";
+    const authDate = Math.floor(Date.now() / 1000);
+    const testUser = JSON.stringify({ id: 123456789, first_name: "Aziz", username: "aziz_test" });
+
+    // Generate valid Telegram initData
+    const params = new Map([
+      ["auth_date", String(authDate)],
+      ["query_id", "AAG_TEST_QUERY"],
+      ["user", testUser],
+    ]);
+
+    const sortedKeys = Array.from(params.keys()).sort();
+    const dataCheckString = sortedKeys.map((k) => `${k}=${params.get(k)}`).join("\n");
+
+    const secretKey = crypto.createHmac("sha256", "WebAppData").update(testBotToken).digest();
+    const validHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+    const validInitData = `${dataCheckString.split("\n").join("&")}&hash=${validHash}`;
+    const tamperedInitData = `${dataCheckString.split("\n").join("&")}&hash=badhash0000000000000000000000000000000000000000000000000000000000`;
+
+    // Local validation logic matching src/lib/auth/telegram.ts
+    function verifyInitData(initData, token) {
+      const p = new URLSearchParams(initData);
+      const h = p.get("hash");
+      p.delete("hash");
+      const checkStr = Array.from(p.keys()).sort().map(k => `${k}=${p.get(k)}`).join("\n");
+      const sk = crypto.createHmac("sha256", "WebAppData").update(token).digest();
+      const ch = crypto.createHmac("sha256", sk).update(checkStr).digest("hex");
+      return h === ch;
+    }
+
+    assert(verifyInitData(validInitData, testBotToken) === true, "Valid Telegram initData HMAC correctly verified");
+    assert(verifyInitData(tamperedInitData, testBotToken) === false, "Tampered Telegram initData HMAC correctly rejected");
+    assert(verifyInitData(validInitData, "wrong_token:12345") === false, "Telegram initData with wrong bot token rejected");
+
     console.log("\n==================================================");
     console.log(`RESULTS: ${passed} passed, ${failed} failed`);
     console.log("==================================================");

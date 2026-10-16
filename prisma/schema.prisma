@@ -12,37 +12,42 @@ datasource db {
 }
 
 model User {
-  id           String           @id @default(cuid())
-  email        String           @unique
-  passwordHash String
-  name         String
-  phone        String?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  memberships  BusinessMember[]
-  auditLogs    AuditLog[]
+  id               String           @id @default(cuid())
+  email            String           @unique
+  passwordHash     String
+  name             String
+  phone            String?
+  telegramId       String?          @unique
+  telegramUsername String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  memberships      BusinessMember[]
+  auditLogs        AuditLog[]
+
+  @@index([telegramId])
 }
 
 model Business {
-  id           String           @id @default(cuid())
-  name         String
-  inn          String?          // Uzbek Tax ID (ИНН)
-  phone        String?
-  address      String?
-  city         String?          @default("Ташкент")
-  currency     String           @default("UZS")
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id             String           @id @default(cuid())
+  name           String
+  inn            String?          // Uzbek Tax ID (ИНН)
+  phone          String?
+  address        String?
+  city           String?          @default("Ташкент")
+  currency       String           @default("UZS")
+  telegramChatId String?          // Telegram chat/channel ID for instant business notifications
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  members      BusinessMember[]
-  categories   Category[]
-  products     Product[]
-  customers    Customer[]
-  orders       Order[]
-  payments     Payment[]
-  transactions Transaction[]
-  notifications Notification[]
-  auditLogs    AuditLog[]
+  members        BusinessMember[]
+  categories     Category[]
+  products       Product[]
+  customers      Customer[]
+  orders         Order[]
+  payments       Payment[]
+  transactions   Transaction[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
 }
 
 model BusinessMember {
@@ -57,6 +62,7 @@ model BusinessMember {
 
   @@unique([userId, businessId])
   @@index([businessId])
+  @@index([userId])
 }
 
 model Category {
@@ -93,6 +99,8 @@ model Product {
 
   @@index([businessId])
   @@index([categoryId])
+  @@index([businessId, stockQuantity])
+  @@index([businessId, name])
 }
 
 model Customer {
@@ -113,6 +121,7 @@ model Customer {
 
   @@index([businessId])
   @@index([phone])
+  @@index([businessId, currentDebt])
 }
 
 model Order {
@@ -137,6 +146,8 @@ model Order {
   @@index([businessId])
   @@index([customerId])
   @@index([status])
+  @@index([businessId, createdAt])
+  @@index([businessId, status])
 }
 
 model OrderItem {
@@ -192,6 +203,8 @@ model Transaction {
   @@index([businessId])
   @@index([type])
   @@index([date])
+  @@index([businessId, date])
+  @@index([businessId, type])
 }
 
 model Notification {
@@ -207,6 +220,7 @@ model Notification {
 
   @@index([businessId])
   @@index([isRead])
+  @@index([businessId, isRead, createdAt])
 }
 
 model AuditLog {

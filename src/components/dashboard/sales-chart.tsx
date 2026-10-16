@@ -28,15 +28,22 @@ export function SalesChart({ data }: SalesChartProps) {
 
   if (!mounted) {
     return (
-      <div className="h-64 w-full flex items-center justify-center text-xs text-slate-400">
-        Загрузка графика...
+      <div className="h-64 sm:h-72 w-full flex flex-col justify-end gap-2 p-4 bg-slate-50/60 rounded-xl border border-slate-100 animate-pulse">
+        <div className="h-4 w-32 bg-slate-200 rounded" />
+        <div className="h-36 w-full bg-slate-200/60 rounded-lg" />
+        <div className="flex justify-between pt-2">
+          <div className="h-3 w-8 bg-slate-200 rounded" />
+          <div className="h-3 w-8 bg-slate-200 rounded" />
+          <div className="h-3 w-8 bg-slate-200 rounded" />
+          <div className="h-3 w-8 bg-slate-200 rounded" />
+        </div>
       </div>
     );
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="h-64 w-full flex items-center justify-center text-xs text-slate-400">
+      <div className="h-64 sm:h-72 w-full flex items-center justify-center text-xs text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
         Нет данных о продажах за выбранный период
       </div>
     );

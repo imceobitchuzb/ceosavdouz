@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
+import { TelegramMiniAppProvider } from "@/components/telegram/TelegramMiniAppProvider";
 
 export const metadata: Metadata = {
   title: "CEOSAVDOUZ — Система управления бизнесом в Узбекистане",
@@ -28,8 +30,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className="scroll-smooth">
+      <head>
+        <Script
+          src="https://telegram.org/js/telegram-web-app.js"
+          strategy="beforeInteractive"
+        />
+      </head>
       <body className="min-h-screen bg-[#faf9f6] text-slate-900 font-sans antialiased flex flex-col">
-        {children}
+        <TelegramMiniAppProvider>{children}</TelegramMiniAppProvider>
       </body>
     </html>
   );

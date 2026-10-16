@@ -237,7 +237,7 @@ export async function POST(request: Request) {
       return newOrder;
     });
 
-    // Notify Telegram Stub integration boundary (Stage 2 preparation)
+    // Notify Telegram service
     await TelegramNotificationService.notifyNewOrder({
       orderId: orderResult.id,
       orderNumber: orderResult.orderNumber,
@@ -245,6 +245,8 @@ export async function POST(request: Request) {
       totalAmount: orderResult.totalAmount,
       itemCount: orderResult.items.length,
       businessName: session.businessName,
+      businessId: session.businessId,
+      paymentMethod,
     });
 
     return NextResponse.json({ success: true, order: orderResult }, { status: 201 });

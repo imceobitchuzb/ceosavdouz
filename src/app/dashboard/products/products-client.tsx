@@ -22,7 +22,8 @@ import {
   Trash2,
   Package,
   CheckCircle2,
-  Filter
+  Filter,
+  X
 } from "lucide-react";
 
 interface Product {
@@ -60,25 +61,25 @@ export function ProductsClient({
   const [stockFilter, setStockFilter] = React.useState<"all" | "low">("all");
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
 
-  const filteredProducts = initialProducts.filter((product) => {
-    // Search match
-    const s = search.toLowerCase();
-    const matchesSearch =
-      !search ||
-      product.name.toLowerCase().includes(s) ||
-      (product.sku && product.sku.toLowerCase().includes(s)) ||
-      (product.barcode && product.barcode.includes(s));
+  // Memoized filtering for fast typing without lag
+  const filteredProducts = React.useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return initialProducts.filter((product) => {
+      const matchesSearch =
+        !s ||
+        product.name.toLowerCase().includes(s) ||
+        (product.sku && product.sku.toLowerCase().includes(s)) ||
+        (product.barcode && product.barcode.includes(s));
 
-    // Category match
-    const matchesCategory =
-      selectedCategory === "all" || product.category?.id === selectedCategory;
+      const matchesCategory =
+        selectedCategory === "all" || product.category?.id === selectedCategory;
 
-    // Stock filter match
-    const matchesStock =
-      stockFilter === "all" || product.stockQuantity <= product.minStockThreshold;
+      const matchesStock =
+        stockFilter === "all" || product.stockQuantity <= product.minStockThreshold;
 
-    return matchesSearch && matchesCategory && matchesStock;
-  });
+      return matchesSearch && matchesCategory && matchesStock;
+    });
+  }, [initialProducts, search, selectedCategory, stockFilter]);
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Вы действительно хотите удалить товар «${name}»?`)) return;
@@ -109,8 +110,16 @@ export function ProductsClient({
             placeholder="Поиск по названию, артикулу или штрихкоду..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 text-xs"
+            className="pl-9 pr-8 text-xs h-9"
           />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -131,42 +140,32 @@ export function ProductsClient({
           {/* Stock Filter Toggle */}
           <button
             onClick={() => setStockFilter(stockFilter === "all" ? "low" : "all")}
-            className={`h-9 px-3 rounded-md text-xs font-medium border flex items-center gap-1.5 transition-colors ${
+            className={`h-9 px-3 rounded-md text-xs font-medium border flex items-center gap-1.5 transition-colors touch-manipulation ${
               stockFilter === "low"
-                ? "bg-rose-50 border-rose-300 text-rose-800"
+                ? "bg-rose-50 border-rose-300 text-rose-800 font-semibold"
                 : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
             }`}
           >
             <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-            <span>Только с низким остатком</span>
+            <span>Только малый остаток</span>
           </button>
         </div>
       </div>
 
-      {/* Products Table */}
+      {/* Content: Mobile Cards + Desktop Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         {filteredProducts.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <Package className="w-10 h-10 text-slate-300 mx-auto" />
             <h3 className="text-sm font-semibold text-slate-900">Товары не найдены</h3>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Попробуйте изменить поисковый запрос или фильтры категорий.
+              Попробуйте изменить поисковый запрос или сбросить фильтры.
             </p>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Наименование и артикул</TableHead>
-                <TableHead>Категория</TableHead>
-                <TableHead>Себестоимость</TableHead>
-                <TableHead>Цена продажи</TableHead>
-                <TableHead>Наценка</TableHead>
-                <TableHead>Остаток на складе</TableHead>
-                <TableHead className="text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            {/* MOBILE CARDS VIEW (< md) */}
+            <div className="divide-y divide-slate-100 md:hidden">
               {filteredProducts.map((p) => {
                 const isLowStock = p.stockQuantity <= p.minStockThreshold;
                 const margin =
@@ -175,44 +174,58 @@ export function ProductsClient({
                     : 0;
 
                 return (
-                  <TableRow key={p.id}>
-                    <TableCell>
-                      <div>
+                  <div key={p.id} className="p-3.5 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
                         <Link
                           href={`/dashboard/products/${p.id}`}
-                          className="font-bold text-slate-900 hover:text-emerald-700 transition-colors"
+                          className="font-bold text-sm text-slate-900 hover:text-emerald-700 line-clamp-2"
                         >
                           {p.name}
                         </Link>
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400 font-mono">
+                        <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-400 font-mono">
                           {p.sku && <span>SKU: {p.sku}</span>}
-                          {p.barcode && <span>ШК: {p.barcode}</span>}
+                          {p.category && (
+                            <Badge variant="secondary" className="text-[10px] py-0 px-1.5 h-4">
+                              {p.category.name}
+                            </Badge>
+                          )}
                         </div>
                       </div>
-                    </TableCell>
 
-                    <TableCell>
-                      <Badge variant="secondary" className="text-[11px] font-normal">
-                        {p.category?.name || "Без категории"}
-                      </Badge>
-                    </TableCell>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Link href={`/dashboard/products/${p.id}`}>
+                          <button
+                            className="p-2 text-slate-600 hover:text-emerald-700 hover:bg-slate-100 rounded-lg touch-manipulation"
+                            title="Редактировать"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                        </Link>
+                        {userRole !== "CASHIER" && (
+                          <button
+                            onClick={() => handleDelete(p.id, p.name)}
+                            disabled={deletingId === p.id}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg touch-manipulation"
+                            title="Удалить"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-                    <TableCell className="text-xs font-mono text-slate-600">
-                      {formatUZS(p.costPrice)}
-                    </TableCell>
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-50">
+                      <div>
+                        <span className="font-extrabold text-slate-900 font-mono text-sm block">
+                          {formatUZS(p.sellingPrice)}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          Закупка: {formatUZS(p.costPrice)} · <span className="text-emerald-700 font-semibold">+{margin}%</span>
+                        </span>
+                      </div>
 
-                    <TableCell className="text-xs font-bold font-mono text-slate-900">
-                      {formatUZS(p.sellingPrice)}
-                    </TableCell>
-
-                    <TableCell>
-                      <span className="text-xs font-semibold text-emerald-700">
-                        +{margin}%
-                      </span>
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
+                      <div className="text-right">
                         <Badge
                           variant={isLowStock ? "destructive" : "outline"}
                           className={`text-xs ${
@@ -222,44 +235,127 @@ export function ProductsClient({
                           {p.stockQuantity} {p.unit}
                         </Badge>
                         {isLowStock && (
-                          <span
-                            title={`Мин. порог: ${p.minStockThreshold} ${p.unit}`}
-                            className="text-[10px] text-rose-600 font-medium"
-                          >
-                            (мин. {p.minStockThreshold})
+                          <span className="text-[10px] text-rose-600 font-semibold block mt-0.5">
+                            Мин. {p.minStockThreshold}
                           </span>
                         )}
                       </div>
-                    </TableCell>
-
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Link href={`/dashboard/products/${p.id}`}>
-                          <button
-                            className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-100 rounded-md transition-colors"
-                            title="Редактировать товар"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                        </Link>
-
-                        {userRole !== "CASHIER" && (
-                          <button
-                            onClick={() => handleDelete(p.id, p.name)}
-                            disabled={deletingId === p.id}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-                            title="Удалить товар"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
+            </div>
+
+            {/* DESKTOP TABLE VIEW (>= md) */}
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Наименование и артикул</TableHead>
+                    <TableHead>Категория</TableHead>
+                    <TableHead>Себестоимость</TableHead>
+                    <TableHead>Цена продажи</TableHead>
+                    <TableHead>Наценка</TableHead>
+                    <TableHead>Остаток на складе</TableHead>
+                    <TableHead className="text-right">Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProducts.map((p) => {
+                    const isLowStock = p.stockQuantity <= p.minStockThreshold;
+                    const margin =
+                      p.costPrice > 0
+                        ? Math.round(((p.sellingPrice - p.costPrice) / p.costPrice) * 100)
+                        : 0;
+
+                    return (
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <div>
+                            <Link
+                              href={`/dashboard/products/${p.id}`}
+                              className="font-bold text-slate-900 hover:text-emerald-700 transition-colors"
+                            >
+                              {p.name}
+                            </Link>
+                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400 font-mono">
+                              {p.sku && <span>SKU: {p.sku}</span>}
+                              {p.barcode && <span>ШК: {p.barcode}</span>}
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        <TableCell>
+                          <Badge variant="secondary" className="text-[11px] font-normal">
+                            {p.category?.name || "Без категории"}
+                          </Badge>
+                        </TableCell>
+
+                        <TableCell className="text-xs font-mono text-slate-600">
+                          {formatUZS(p.costPrice)}
+                        </TableCell>
+
+                        <TableCell className="text-xs font-bold font-mono text-slate-900">
+                          {formatUZS(p.sellingPrice)}
+                        </TableCell>
+
+                        <TableCell>
+                          <span className="text-xs font-semibold text-emerald-700">
+                            +{margin}%
+                          </span>
+                        </TableCell>
+
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              variant={isLowStock ? "destructive" : "outline"}
+                              className={`text-xs ${
+                                !isLowStock ? "border-slate-200 text-slate-800" : ""
+                              }`}
+                            >
+                              {p.stockQuantity} {p.unit}
+                            </Badge>
+                            {isLowStock && (
+                              <span
+                                title={`Мин. порог: ${p.minStockThreshold} ${p.unit}`}
+                                className="text-[10px] text-rose-600 font-medium"
+                              >
+                                (мин. {p.minStockThreshold})
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Link href={`/dashboard/products/${p.id}`}>
+                              <button
+                                className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-slate-100 rounded-md transition-colors"
+                                title="Редактировать товар"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            </Link>
+
+                            {userRole !== "CASHIER" && (
+                              <button
+                                onClick={() => handleDelete(p.id, p.name)}
+                                disabled={deletingId === p.id}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                                title="Удалить товар"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </div>
     </div>

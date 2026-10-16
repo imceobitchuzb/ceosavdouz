@@ -20,7 +20,9 @@ import {
   ArrowLeft,
   CreditCard,
   Banknote,
-  Send
+  Send,
+  ArrowDown,
+  X
 } from "lucide-react";
 
 interface Product {
@@ -59,6 +61,7 @@ export function OrderBuilderClient({
   customers,
 }: OrderBuilderClientProps) {
   const router = useRouter();
+  const checkoutSectionRef = React.useRef<HTMLDivElement>(null);
 
   // Selected order items
   const [items, setItems] = React.useState<OrderItemRow[]>([]);
@@ -73,6 +76,7 @@ export function OrderBuilderClient({
   // Financials & Status
   const [discountAmount, setDiscountAmount] = React.useState<number>(0);
   const [paidAmount, setPaidAmount] = React.useState<number>(0);
+  const [hasManuallyEditedPaid, setHasManuallyEditedPaid] = React.useState(false);
   const [paymentMethod, setPaymentMethod] = React.useState<"CASH" | "CARD" | "BANK_TRANSFER">("CASH");
   const [orderStatus, setOrderStatus] = React.useState<"COMPLETED" | "PROCESSING" | "PENDING">("COMPLETED");
   const [notes, setNotes] = React.useState("");
@@ -80,16 +84,35 @@ export function OrderBuilderClient({
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Auto-calculated totals
-  const subtotal = items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
-  const totalAmount = Math.max(0, subtotal - discountAmount);
+  // Auto-calculated totals with memoization
+  const subtotal = React.useMemo(() => {
+    return items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+  }, [items]);
 
-  // When totalAmount updates, default paidAmount to full if previously matching
+  const totalAmount = React.useMemo(() => {
+    return Math.max(0, subtotal - discountAmount);
+  }, [subtotal, discountAmount]);
+
+  // Synchronize paidAmount only if user hasn't explicitly set a custom amount
   React.useEffect(() => {
-    setPaidAmount(totalAmount);
-  }, [totalAmount]);
+    if (!hasManuallyEditedPaid) {
+      setPaidAmount(totalAmount);
+    }
+  }, [totalAmount, hasManuallyEditedPaid]);
 
   const debtAmount = Math.max(0, totalAmount - paidAmount);
+
+  // Memoized product search
+  const filteredProducts = React.useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => {
+      return (
+        p.name.toLowerCase().includes(q) ||
+        (p.sku && p.sku.toLowerCase().includes(q))
+      );
+    });
+  }, [products, productSearch]);
 
   // Add item or increment quantity
   const handleAddProduct = (product: Product) => {
@@ -99,8 +122,8 @@ export function OrderBuilderClient({
         alert(`На складе доступно только ${product.stockQuantity} ${product.unit}`);
         return;
       }
-      setItems(
-        items.map((i) =>
+      setItems((prev) =>
+        prev.map((i) =>
           i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i
         )
       );
@@ -109,8 +132,8 @@ export function OrderBuilderClient({
         alert(`Товар «${product.name}» закончился на складе!`);
         return;
       }
-      setItems([
-        ...items,
+      setItems((prev) => [
+        ...prev,
         {
           productId: product.id,
           productName: product.name,
@@ -142,7 +165,11 @@ export function OrderBuilderClient({
   };
 
   const removeItem = (productId: string) => {
-    setItems(items.filter((i) => i.productId !== productId));
+    setItems((prev) => prev.filter((i) => i.productId !== productId));
+  };
+
+  const scrollToCheckout = () => {
+    checkoutSectionRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -194,104 +221,118 @@ export function OrderBuilderClient({
     }
   };
 
-  const filteredProducts = products.filter((p) => {
-    const q = productSearch.toLowerCase();
-    return (
-      !productSearch ||
-      p.name.toLowerCase().includes(q) ||
-      (p.sku && p.sku.toLowerCase().includes(q))
-    );
-  });
-
   const selectedCustomerObj = customers.find((c) => c.id === selectedCustomerId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 lg:pb-0">
       {error && (
-        <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
           <span>{error}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* LEFT COLUMN: Catalog Picker (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
-          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3">
+          <div className="p-4 sm:p-5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Выбор товаров из каталога
+                Каталог товаров
               </span>
-              <span className="text-xs text-slate-500">
-                Всего в наличии: {products.length} товаров
+              <span className="text-xs text-slate-500 font-mono">
+                {products.length} поз.
               </span>
             </div>
 
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
               <Input
-                placeholder="Поиск товара по названию или SKU..."
+                placeholder="Поиск по названию или артикулу..."
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
-                className="pl-9 text-xs"
+                className="pl-9 pr-8 text-xs h-10"
               />
+              {productSearch && (
+                <button
+                  onClick={() => setProductSearch("")}
+                  className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            <div className="max-h-96 overflow-y-auto divide-y divide-slate-100 pr-1">
-              {filteredProducts.map((p) => {
-                const inCart = items.find((i) => i.productId === p.id);
-                const isOutOfStock = p.stockQuantity <= 0;
+            <div className="max-h-[520px] overflow-y-auto divide-y divide-slate-100 pr-1 -mr-1">
+              {filteredProducts.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  Товары не найдены
+                </div>
+              ) : (
+                filteredProducts.map((p) => {
+                  const inCart = items.find((i) => i.productId === p.id);
+                  const isOutOfStock = p.stockQuantity <= 0;
 
-                return (
-                  <div
-                    key={p.id}
-                    className="py-2.5 flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="flex-1 pr-2">
-                      <p className="font-semibold text-slate-900">{p.name}</p>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                        <span className="font-bold text-emerald-800">
-                          {formatUZS(p.sellingPrice)}
-                        </span>
-                        <span>·</span>
-                        <span className={isOutOfStock ? "text-rose-600 font-semibold" : ""}>
-                          Остаток: {p.stockQuantity} {p.unit}
-                        </span>
-                      </div>
-                    </div>
-
-                    <Button
-                      size="sm"
-                      disabled={isOutOfStock}
-                      variant={inCart ? "secondary" : "outline"}
-                      onClick={() => handleAddProduct(p)}
-                      className="h-8 px-3 text-xs gap-1 shrink-0"
+                  return (
+                    <div
+                      key={p.id}
+                      className="py-3 flex items-center justify-between gap-2.5 text-xs transition-colors hover:bg-slate-50/60 rounded-lg px-1.5"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{inCart ? `В чеке: ${inCart.quantity}` : "Добавить"}</span>
-                    </Button>
-                  </div>
-                );
-              })}
+                      <div className="flex-1 min-w-0 pr-2">
+                        <p className="font-semibold text-slate-900 truncate">{p.name}</p>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 mt-0.5">
+                          <span className="font-bold text-emerald-800 font-mono">
+                            {formatUZS(p.sellingPrice)}
+                          </span>
+                          <span>·</span>
+                          <span className={isOutOfStock ? "text-rose-600 font-semibold" : ""}>
+                            Остаток: {p.stockQuantity} {p.unit}
+                          </span>
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        disabled={isOutOfStock}
+                        variant={inCart ? "secondary" : "outline"}
+                        onClick={() => handleAddProduct(p)}
+                        className={`h-9 px-3 text-xs gap-1 shrink-0 touch-manipulation ${
+                          inCart ? "border-emerald-300 bg-emerald-50 text-emerald-900 font-semibold" : ""
+                        }`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{inCart ? `В чеке: ${inCart.quantity}` : "В чек"}</span>
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
 
         {/* RIGHT COLUMN: Order Summary & Checkout (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <Card className="shadow-sm">
-            <CardContent className="p-5 space-y-5">
+        <div ref={checkoutSectionRef} className="lg:col-span-5 space-y-4">
+          <Card className="shadow-sm border-slate-200">
+            <CardContent className="p-4 sm:p-5 space-y-5">
               {/* Customer Selector */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Клиент / Покупатель
-                </label>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Контрагент
+                  </label>
+                  {items.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-200">
+                      Позиций: {items.length}
+                    </Badge>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-lg text-xs font-medium">
                   <button
                     type="button"
                     onClick={() => setCustomerMode("guest")}
-                    className={`py-1 rounded text-center transition-colors ${
+                    className={`py-1.5 rounded-md text-center transition-colors ${
                       customerMode === "guest"
                         ? "bg-white text-slate-900 font-bold shadow-2xs"
                         : "text-slate-600"
@@ -302,7 +343,7 @@ export function OrderBuilderClient({
                   <button
                     type="button"
                     onClick={() => setCustomerMode("existing")}
-                    className={`py-1 rounded text-center transition-colors ${
+                    className={`py-1.5 rounded-md text-center transition-colors ${
                       customerMode === "existing"
                         ? "bg-white text-slate-900 font-bold shadow-2xs"
                         : "text-slate-600"
@@ -313,7 +354,7 @@ export function OrderBuilderClient({
                   <button
                     type="button"
                     onClick={() => setCustomerMode("new")}
-                    className={`py-1 rounded text-center transition-colors ${
+                    className={`py-1.5 rounded-md text-center transition-colors ${
                       customerMode === "new"
                         ? "bg-white text-slate-900 font-bold shadow-2xs"
                         : "text-slate-600"
@@ -328,7 +369,7 @@ export function OrderBuilderClient({
                     <select
                       value={selectedCustomerId}
                       onChange={(e) => setSelectedCustomerId(e.target.value)}
-                      className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                      className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                     >
                       <option value="">Выберите клиента...</option>
                       {customers.map((c) => (
@@ -340,8 +381,8 @@ export function OrderBuilderClient({
 
                     {selectedCustomerObj && selectedCustomerObj.currentDebt > 0 && (
                       <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
-                        <span>Текущий долг клиента:</span>
-                        <span className="font-bold text-amber-800">
+                        <span>Текущий долг (Насия):</span>
+                        <span className="font-bold text-amber-900 font-mono">
                           {formatUZS(selectedCustomerObj.currentDebt)}
                         </span>
                       </div>
@@ -355,13 +396,13 @@ export function OrderBuilderClient({
                       placeholder="Имя клиента *"
                       value={newCustomerName}
                       onChange={(e) => setNewCustomerName(e.target.value)}
-                      className="text-xs"
+                      className="text-xs h-9"
                     />
                     <Input
                       placeholder="Телефон (+998 XX XXX XX XX)"
                       value={newCustomerPhone}
                       onChange={(e) => setNewCustomerPhone(e.target.value)}
-                      className="text-xs"
+                      className="text-xs h-9"
                     />
                   </div>
                 )}
@@ -374,15 +415,15 @@ export function OrderBuilderClient({
                 </span>
 
                 {items.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                    Нажмите «Добавить» в каталоге слева
+                  <div className="p-6 text-center text-xs text-slate-400 bg-slate-50/80 rounded-lg border border-dashed border-slate-200">
+                    Нажмите «В чек» на товарах из списка
                   </div>
                 ) : (
-                  <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 pr-1 text-xs">
+                  <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 pr-1 text-xs -mr-1">
                     {items.map((item) => (
-                      <div key={item.productId} className="py-2 space-y-1.5">
+                      <div key={item.productId} className="py-2.5 space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-slate-900 line-clamp-1 pr-2">
+                          <span className="font-semibold text-slate-900 truncate pr-2">
                             {item.productName}
                           </span>
                           <span className="font-mono font-bold text-slate-900 shrink-0">
@@ -391,29 +432,32 @@ export function OrderBuilderClient({
                         </div>
 
                         <div className="flex items-center justify-between text-slate-500">
-                          <span>{formatUZS(item.unitPrice)} / шт</span>
+                          <span className="text-[11px]">{formatUZS(item.unitPrice)} / шт</span>
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => updateQuantity(item.productId, -1)}
-                              className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700"
+                              className="w-7 h-7 rounded bg-slate-100 hover:bg-slate-200 active:bg-slate-300 flex items-center justify-center text-slate-700 touch-manipulation"
+                              aria-label="Уменьшить количество"
                             >
-                              <Minus className="w-3 h-3" />
+                              <Minus className="w-3.5 h-3.5" />
                             </button>
-                            <span className="w-6 text-center font-bold text-slate-900">
+                            <span className="w-6 text-center font-bold text-slate-900 font-mono">
                               {item.quantity}
                             </span>
                             <button
                               type="button"
                               onClick={() => updateQuantity(item.productId, 1)}
-                              className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700"
+                              className="w-7 h-7 rounded bg-slate-100 hover:bg-slate-200 active:bg-slate-300 flex items-center justify-center text-slate-700 touch-manipulation"
+                              aria-label="Увеличить количество"
                             >
-                              <Plus className="w-3 h-3" />
+                              <Plus className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => removeItem(item.productId)}
-                              className="p-1 text-slate-400 hover:text-rose-600 ml-1"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 ml-1 rounded"
+                              aria-label="Удалить позицию"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -437,12 +481,12 @@ export function OrderBuilderClient({
                     value={discountAmount || ""}
                     onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
                     placeholder="0"
-                    className="w-32 h-8 text-right font-mono text-xs"
+                    className="w-32 h-9 text-right font-mono text-xs"
                   />
                 </div>
 
                 {/* Subtotal & Total */}
-                <div className="p-3 bg-slate-50 rounded-lg space-y-1">
+                <div className="p-3.5 bg-slate-50 rounded-xl space-y-1.5 border border-slate-100">
                   <div className="flex justify-between text-slate-500">
                     <span>Подытог:</span>
                     <span className="font-mono">{formatUZS(subtotal)}</span>
@@ -453,7 +497,7 @@ export function OrderBuilderClient({
                       <span className="font-mono">-{formatUZS(discountAmount)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-extrabold text-base text-slate-900 pt-1 border-t border-slate-200">
+                  <div className="flex justify-between font-extrabold text-base text-slate-900 pt-1.5 border-t border-slate-200">
                     <span>Итого к оплате:</span>
                     <span className="text-emerald-800 font-mono">{formatUZS(totalAmount)}</span>
                   </div>
@@ -467,14 +511,17 @@ export function OrderBuilderClient({
                     min="0"
                     step="5000"
                     value={paidAmount}
-                    onChange={(e) => setPaidAmount(Number(e.target.value) || 0)}
-                    className="w-32 h-8 text-right font-mono text-xs font-bold"
+                    onChange={(e) => {
+                      setHasManuallyEditedPaid(true);
+                      setPaidAmount(Number(e.target.value) || 0);
+                    }}
+                    className="w-36 h-9 text-right font-mono text-xs font-bold"
                   />
                 </div>
 
                 {/* Outstanding Debt Indicator */}
                 {debtAmount > 0 && (
-                  <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 flex justify-between items-center font-semibold">
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 flex justify-between items-center font-semibold">
                     <span>Долг клиента (Насия):</span>
                     <span className="text-amber-800 font-mono">{formatUZS(debtAmount)}</span>
                   </div>
@@ -488,11 +535,11 @@ export function OrderBuilderClient({
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value as any)}
-                    className="w-full h-8 px-2 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
+                    className="w-full h-9 px-2 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
                   >
                     <option value="CASH">Наличные (Сум)</option>
                     <option value="CARD">Uzcard / Humo</option>
-                    <option value="BANK_TRANSFER">Банковский перевод</option>
+                    <option value="BANK_TRANSFER">Банковский перевод (р/с)</option>
                   </select>
                 </div>
 
@@ -504,9 +551,9 @@ export function OrderBuilderClient({
                   <select
                     value={orderStatus}
                     onChange={(e) => setOrderStatus(e.target.value as any)}
-                    className="w-full h-8 px-2 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
+                    className="w-full h-9 px-2 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
                   >
-                    <option value="COMPLETED">Выполнен (Продажа завершена)</option>
+                    <option value="COMPLETED">Выполнен (Продажа закрыта)</option>
                     <option value="PROCESSING">В обработке (Сборка/Доставка)</option>
                     <option value="PENDING">Новый (Ожидает подтверждения)</option>
                   </select>
@@ -518,7 +565,7 @@ export function OrderBuilderClient({
                     placeholder="Примечание к заказу (например, доставка Yandex Taxi)..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="text-xs h-8"
+                    className="text-xs h-9"
                   />
                 </div>
               </div>
@@ -527,7 +574,7 @@ export function OrderBuilderClient({
               <Button
                 onClick={handleSubmit}
                 disabled={loading || items.length === 0}
-                className="w-full bg-emerald-700 hover:bg-emerald-800 gap-2 shadow-sm"
+                className="w-full h-11 bg-emerald-700 hover:bg-emerald-800 text-sm gap-2 shadow-sm touch-manipulation"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>{loading ? "Оформление заказа..." : `Оформить на ${formatUZS(totalAmount)}`}</span>
@@ -536,6 +583,31 @@ export function OrderBuilderClient({
           </Card>
         </div>
       </div>
+
+      {/* MOBILE STICKY FLOATING CHECKOUT BAR */}
+      {items.length > 0 && (
+        <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 z-40 lg:hidden shadow-lg animate-in slide-in-from-bottom duration-200">
+          <div className="max-w-md mx-auto flex items-center justify-between gap-3">
+            <div>
+              <span className="text-[11px] text-slate-500 font-medium block">
+                {items.length} {items.length === 1 ? "товар" : "товара(ов)"} в чеке
+              </span>
+              <span className="text-base font-extrabold text-emerald-800 font-mono">
+                {formatUZS(totalAmount)}
+              </span>
+            </div>
+
+            <Button
+              size="sm"
+              onClick={scrollToCheckout}
+              className="gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-xs px-4 h-9 shadow-sm"
+            >
+              <span>К оплате</span>
+              <ArrowDown className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
